@@ -332,9 +332,11 @@ pub(super) struct ScreenCache {
     catalog: Arc<json_ui::Catalog>,
     reference: &'static str,
     context: json_ui::Context,
-    resolved: json_ui::ResolvedControl,
+    resolved: Arc<json_ui::ResolvedControl>,
+    /// Factory and grid resolutions for this catalog and context.
+    library: json_ui::ResolveCache,
     /// The data `tree` or the layout's `FormRender::bound` was bound against.
-    data: Option<DataSource>,
+    data: Option<Arc<DataSource>>,
     /// The bound tree while no layout holds it, so a relayout never clones it.
     tree: Option<json_ui::ResolvedControl>,
     /// The tree's measurements at the laid root size, reused while scrolling.
@@ -384,7 +386,8 @@ impl ScreenCache {
                 catalog: Arc::clone(catalog),
                 reference,
                 context: context.clone(),
-                resolved: json_ui::resolve_screen(reference, catalog, context)?,
+                resolved: Arc::new(json_ui::resolve_screen(reference, catalog, context)?),
+                library: json_ui::ResolveCache::default(),
                 data: None,
                 tree: None,
                 measures: json_ui::MeasureCache::default(),
@@ -400,30 +403,52 @@ impl ScreenCache {
             cached.text = text;
             cached.measures = json_ui::MeasureCache::default();
         }
-        if cached.data.as_ref() != Some(data) {
-            cached.tree = Some(json_ui::bind_screen(
-                &cached.resolved,
-                catalog,
-                context,
-                data,
-                &mut cached.binding,
-            ));
-            cached.data = Some(data.clone());
+        if cached
+            .laid
+            .as_ref()
+            .is_some_and(|(_, laid_root, _)| *laid_root != root)
+        {
             cached.measures = json_ui::MeasureCache::default();
-            cached.laid = None;
+        }
+        if cached.data.as_deref() != Some(data) {
+            let data = Arc::new(data.clone());
+            let library = json_ui::CachedLibrary {
+                library: json_ui::CatalogLibrary { catalog, context },
+                cache: &cached.library,
+            };
+            let previous = cached.tree.take().or_else(|| {
+                let (_, _, render) = cached.laid.take()?;
+                Some(
+                    Arc::try_unwrap(render)
+                        .map_or_else(|shared| shared.bound.clone(), |render| render.bound),
+                )
+            });
+            cached.tree = Some(match previous {
+                Some(mut bound) => {
+                    json_ui::rebind(
+                        &cached.resolved,
+                        &data,
+                        &library,
+                        &mut cached.binding,
+                        &mut bound,
+                        &mut cached.measures,
+                    );
+                    bound
+                }
+                None => json_ui::bind_incremental(
+                    &cached.resolved,
+                    &data,
+                    &library,
+                    &mut cached.binding,
+                ),
+            });
+            cached.data = Some(data);
         }
         // Hover, press and focus only filter the gated nodes; scroll lays out again.
         let fresh = |(laid_view, laid_root, _): &(ViewState, [f64; 2], _)| {
             !text_changed && laid_view.scroll == view.scroll && *laid_root == root
         };
         if !cached.laid.as_ref().is_some_and(fresh) {
-            if cached
-                .laid
-                .as_ref()
-                .is_some_and(|(_, laid_root, _)| *laid_root != root)
-            {
-                cached.measures = json_ui::MeasureCache::default();
-            }
             let tree = match cached.tree.take() {
                 Some(tree) => tree,
                 None => {
@@ -468,7 +493,7 @@ pub fn engine_panel_contains(frame: &EngineFrame, gui: [f32; 2]) -> bool {
         .is_some_and(|[px, py, pw, ph]| x >= px && x < px + pw && y >= py && y < py + ph)
 }
 
-/// Builds one screen's collections, pushing each drawn icon into `icons`.
+/// Builds collections with one icon-table entry per cell, keeping later bindings stable.
 struct Cells<'a> {
     frame: &'a HudFrame,
     icons: &'a mut Vec<IconRef>,
@@ -481,16 +506,17 @@ impl Cells<'_> {
         icon: Option<IconRef>,
         durability: Option<f32>,
     ) -> CollectionItem {
-        // A retained cell must answer even when empty, otherwise the previous
-        // frame's index can name a different icon in the new compact table.
+        let index = self.icons.len();
+        // Empty cells reserve an entry but never address it: their binding is Null.
+        self.icons.push(icon.unwrap_or(IconRef {
+            page: 0,
+            uv: [0; 4],
+            glint: false,
+        }));
         let mut item =
             CollectionItem::default().with("#item_renderer_data", Scalar::Json(Value::Null));
-        if let (Some(_), Some(icon)) = (stack, icon) {
-            self.icons.push(icon);
-            item = item.with(
-                "#item_renderer_data",
-                Scalar::Num((self.icons.len() - 1) as f64),
-            );
+        if stack.is_some() && icon.is_some() {
+            item = item.with("#item_renderer_data", Scalar::Num(index as f64));
         }
         let count = stack.map_or(0, |stack| stack.count);
         let name = stack
@@ -526,7 +552,7 @@ impl Cells<'_> {
 }
 
 /// The player's main inventory (slots 9 to 35) and hotbar as vanilla's `inventory_items` and
-/// `hotbar_items` rows, pushing each drawn icon into `icons`.
+/// `hotbar_items` rows, reserving an icon entry even for empty cells.
 pub(super) fn player_rows(
     player_runtime: &player_state::PlayerState,
     runtime: &UiRuntime,
