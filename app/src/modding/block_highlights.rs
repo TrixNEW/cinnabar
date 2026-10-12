@@ -1,11 +1,10 @@
 //! Presentation adapter for read-only loaded-block highlights.
 use bevy::prelude::*;
-use client_ui::ui_runtime::UiRuntime;
-use render::ModRenderScene;
+use client_shell::ui_resources::UiRuntimeResource;
+use render_scene::ModRenderScene;
 use {
-    crate::{menu::MenuRuntime, runtime::world::ClientWorld},
-    client_presentation::camera::FlyCamera,
-    client_state::ClientFrameSet,
+    crate::runtime::world::ClientWorld, client_presentation::camera::FlyCamera,
+    client_shell::menu::MenuRuntime, client_state::ClientFrameSet,
 };
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -57,7 +56,7 @@ fn publish(
     extension: Option<Res<super::ModRuntime>>,
     world: Option<Res<ClientWorld>>,
     menu: Option<Res<MenuRuntime>>,
-    ui: Option<Res<UiRuntime>>,
+    ui: Option<Res<UiRuntimeResource>>,
     player: Option<Res<client_state::PlayerRuntime>>,
     cameras: Query<&Transform, With<FlyCamera>>,
     mut discovery: Local<Discovery>,
@@ -76,7 +75,8 @@ fn publish(
         .as_deref()
         .filter(|runtime| !runtime.suspended)
         .and_then(|runtime| {
-            (0..runtime.host_count()).find_map(|index| runtime.host(index).block_highlights())
+            (0..runtime.hosts.host_count())
+                .find_map(|index| runtime.hosts.host(index).block_highlights())
         });
     let camera = cameras.single().ok();
     let (Some(stream), Some(spec), Some(camera)) = (stream, spec, camera) else {

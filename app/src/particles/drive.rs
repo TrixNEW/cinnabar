@@ -1,10 +1,10 @@
+use bevy::prelude::IntoScheduleConfigs;
 use std::sync::Arc;
 
 use assets::{NetworkIdMode, RuntimeIconCatalog};
 use bevy::camera::Projection;
 use bevy::prelude::{
-    App, IntoScheduleConfigs, Local, MessageReader, Query, Res, ResMut, Resource, Time, Transform,
-    Update, With,
+    App, Local, MessageReader, Query, Res, ResMut, Resource, Time, Transform, Update, With,
 };
 use chunk_pipeline::WorldStream;
 use client_world::{ActorStatusNotice, CommittedParticleEvent};
@@ -16,16 +16,16 @@ use particles::{
     totem_activation_request,
 };
 use protocol::{ActorStatusKind, ParticleEvent, SpawnParticleEffectEvent};
-use render::{
+use render_scene::{
     ParticleGpuFrame, ParticleSimulation, RainSplashQueue, particle_view, update_particle_frame,
 };
 
 use super::actors::{ActorParticleCommand, queue_actor_particles, route_actor_particles};
 use super::{ambient::AmbientParticles, tiles::block_tile, world_adapter::StreamParticleWorld};
 use {
-    crate::{
-        movement::PhysicsCollisionRegistries, runtime::world::ClientWorld,
-        survival_mining::SurvivalMiningRuntime,
+    crate::runtime::world::ClientWorld,
+    client_interaction::{
+        movement::PhysicsCollisionRegistries, survival_mining::SurvivalMiningRuntime,
     },
     client_presentation::camera::FlyCamera,
 };
@@ -375,12 +375,12 @@ fn drive_particles(
     mut block_cues: MessageReader<client_audio::audio::LocalBlockCue>,
     mut break_echoes: Local<client_audio::audio::EchoLedger>,
     mut ambient: Local<AmbientParticles>,
-    profiler: Option<Res<render::RuntimeStageProfiler>>,
+    profiler: Option<Res<render_scene::RuntimeStageProfiler>>,
 ) {
     // Timed inside the system: a span around it would also count systems ordered in between.
     let _timer = profiler
         .as_deref()
-        .map(|profiler| profiler.time(render::RuntimeStage::Particles));
+        .map(|profiler| profiler.time(render_scene::RuntimeStage::Particles));
     let Some(stream) = client_world.stream.as_mut() else {
         if system.emitter_count() > 0 {
             system.clear();

@@ -3,11 +3,13 @@
 use crate::acceptance::AcceptanceRun;
 #[cfg(feature = "acceptance")]
 use ::acceptance::AcceptanceRun;
+use bevy::ecs::system::RunSystemOnce;
+use client_shell::ui_resources::UiRuntimeResource;
 use client_state::PlayerRuntime;
 #[path = "latency_fences.rs"]
 mod latency_fences;
 
-use bevy::{ecs::system::RunSystemOnce, prelude::*, time::Real};
+use bevy::{prelude::*, time::Real};
 use client_audio::audio_ingress::SequencedAudioEvent;
 use client_presentation::server_camera::ServerCameraInstructions;
 use protocol::{
@@ -15,26 +17,30 @@ use protocol::{
     NetworkItemStack, SlotIdentity, WorldBootstrap, WorldEvent,
 };
 use {
-    crate::environment::{WeatherState, WorldClock, bind_session_generation},
-    crate::movement::{
+    crate::{
+        environment::{WeatherState, WorldClock, bind_session_generation},
+        runtime::{
+            phase3_evidence::Phase3EvidenceEmitter,
+            world::{
+                ClientWorld, WorldStreamFramePoll, drain_committed_ui_before_authority,
+                reconcile_world_stream_before_physics,
+            },
+        },
+        ui_runtime::drain_inventory_authority,
+    },
+    acceptance::model_witness::ModelWitnessFileSource,
+    client_interaction::movement::{
         LocalMovementEffectTimeline, LocalMovementSpeedAuthority, LocalPhysicsController,
         MovementTicker, PhysicsCollisionRegistries,
     },
-    crate::runtime::network::session::SequencedWorldEvent,
-    crate::runtime::network::{
+    client_presentation::{
+        camera::CameraSettingsAuthority,
+        local_player::{InteractionOriginSnapshot, LocalPlayerFrameCarrier, LocalViewPose},
+    },
+    client_runtime::inventory::{
         publish_bootstrap_inventory, route_inventory_ingress, route_item_registry_ingress,
     },
-    crate::runtime::phase3_evidence::Phase3EvidenceEmitter,
-    crate::runtime::world::{
-        ClientWorld, WorldStreamFramePoll, drain_committed_ui_before_authority,
-        reconcile_world_stream_before_physics,
-    },
-    crate::ui_runtime::drain_inventory_authority,
-    acceptance::model_witness::ModelWitnessFileSource,
-    client_presentation::camera::CameraSettingsAuthority,
-    client_presentation::local_player::{
-        InteractionOriginSnapshot, LocalPlayerFrameCarrier, LocalViewPose,
-    },
+    client_session::SequencedWorldEvent,
 };
 use {
     client_ui::ui_runtime::UiRuntime,
@@ -77,7 +83,7 @@ fn app() -> App {
     .insert_resource(clock)
     .insert_resource(weather)
     .insert_resource(collisions)
-    .insert_resource(runtime)
+    .insert_resource(UiRuntimeResource(runtime))
     .insert_resource(player_runtime.clone())
     .insert_resource(AcceptanceRun::new(Some(900), None, false, false))
     .insert_resource(ModelWitnessFileSource::new(None))
@@ -86,7 +92,7 @@ fn app() -> App {
     .init_resource::<LocalMovementEffectTimeline>()
     .init_resource::<LocalMovementSpeedAuthority>()
     .init_resource::<Time<Real>>()
-    .init_resource::<render::ChunkUploadBudget>()
+    .init_resource::<render_scene::ChunkUploadBudget>()
     .init_resource::<CameraSettingsAuthority>()
     .init_resource::<LocalViewPose>()
     .init_resource::<LocalPlayerFrameCarrier>()
@@ -429,6 +435,7 @@ fn named_registry(name: &str) -> ItemRegistryEvent {
         entries: [(6, name), (7, "minecraft:oak_planks")]
             .into_iter()
             .map(|(network_id, identifier)| protocol::ItemRegistryEntry {
+                components: None,
                 identifier: identifier.into(),
                 network_id,
                 component_based: false,
@@ -909,6 +916,7 @@ fn ordinary_transfer_bytes_and_conservation_are_identical_after_craft_only_overf
         let mut app = app();
         let registry = ItemRegistryEvent {
             entries: std::sync::Arc::from([protocol::ItemRegistryEntry {
+                components: None,
                 identifier: "minecraft:apple".into(),
                 network_id: 878,
                 component_based: true,
@@ -1070,14 +1078,7 @@ fn ordinary_transfer_bytes_and_conservation_are_identical_after_craft_only_overf
             runtime_entity_id: -1,
         }));
         assert_eq!(ledger.begin_click(0), Ok(-3));
-        let mut encoded = bytes::BytesMut::new();
-        ledger
-            .pending_batch()
-            .unwrap()
-            .unwrap()
-            .0
-            .encode_bytes_mut(&mut encoded)
-            .unwrap();
+        let encoded = protocol::encode(&ledger.pending_batch().unwrap().unwrap().0).unwrap();
         let player = ledger.displayed_stack(0).unwrap().count;
         let cursor = ledger.cursor_stack().unwrap().count;
         assert_eq!(player + cursor, 93);

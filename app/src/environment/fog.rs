@@ -1,7 +1,7 @@
 mod bindings;
 pub(crate) use bindings::{BiomeProfileIndex, FogBindings, FogProfileIndex};
 use chunk_pipeline::WorldStream;
-use render::PRECIPITATION_SAMPLE_OFFSETS;
+use render_model::PRECIPITATION_SAMPLE_OFFSETS;
 
 /// The fog and weather renderers use the same native precipitation lattice.
 fn sample_positions(position: [f32; 3]) -> [[f32; 3]; PRECIPITATION_SAMPLE_OFFSETS.len()] {
@@ -36,7 +36,9 @@ pub(crate) fn fog_precipitation_count(stream: &WorldStream, position: [f32; 3]) 
     let registry = stream.authority().resolved_biome_tints();
     count_precipitation_samples(sample_positions(position).map(|position| {
         let id = stream.camera_biome_id(position)?;
-        Some(registry.biome(id)?.precipitation_eligible())
+        Some(world::weather::precipitation_eligible(
+            registry.biome(id)?.downfall,
+        ))
     }))
 }
 

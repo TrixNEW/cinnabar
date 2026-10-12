@@ -3,10 +3,10 @@ use super::*;
 impl UiPresentationRuntime {
     /// Releases pointer capture while preserving the panel and its editor draft.
     pub fn cancel_mod_panel_pointer_input(&mut self) {
-        if let Some(editor) = self.form_presentation.mod_hud_editor.as_mut() {
+        if let Some(editor) = self.screens.mod_hud_editor.as_mut() {
             editor.cancel_pointer_input();
         }
-        if let Some(panel) = self.form_presentation.mod_panel.as_mut() {
+        if let Some(panel) = self.screens.mod_panel.as_mut() {
             panel.cancel_pointer_input();
         }
     }
@@ -16,6 +16,7 @@ impl ModPanel {
     /// Releases captured movement and visual pointer states without closing the panel.
     fn cancel_pointer_input(&mut self) {
         self.drag = None;
+        self.vector_drag = None;
         self.scroll_drag = None;
         self.pointer = None;
         self.held = false;
@@ -52,8 +53,12 @@ impl ModPanel {
         ];
         if self.scroll_pointer(point, pressed, held) {
             self.drag = None;
+            self.vector_drag = None;
             self.view.pressed = None;
             return Vec::new();
+        }
+        if let Some(events) = self.vector_pointer(point, pressed, held) {
+            return events;
         }
         let Some(frame) = self.frame.as_ref() else {
             return Vec::new();

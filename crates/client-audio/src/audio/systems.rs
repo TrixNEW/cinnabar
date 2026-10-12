@@ -319,6 +319,7 @@ pub fn drive_local_motion(
         stream.collision_store(),
         collisions.registry(mode),
         stream.current_dimension(),
+        Default::default(),
     );
     let after = *last_tick;
     physics.visit_motion_ticks(after, &mut |tick, sample| {
@@ -463,6 +464,7 @@ pub fn drive_ambience(
                 stream.collision_store(),
                 collisions.registry(mode),
                 stream.current_dimension(),
+                Default::default(),
             );
             let block = [
                 eye.x.floor() as i32,
@@ -835,7 +837,7 @@ mod tests {
         state.bind(1, 4, &mut AudioEngine::default());
         assert!(state.admits(&event(20, 0, 4), 0, false));
         let mut delayed = event(2, 0, 4);
-        delayed.actor_synchronization = Some(client_world::ActorLifetimeId {
+        delayed.actor_synchronization = Some(actor_animation::ActorLifetimeId {
             session_id: 1,
             dimension: 0,
             runtime_id: 7,

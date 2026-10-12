@@ -5,12 +5,16 @@ use protocol::{
     ItemRegistryEvent, ItemRegistryVersion, NetworkItemStack, WorldBootstrap, WorldEvent,
 };
 
-use crate::runtime::network::{
-    EquipmentIngress, publish_bootstrap_inventory, publish_equipment_identity,
-    route_equipment_ingress, route_inventory_ingress, route_item_registry_ingress,
-    session::SequencedWorldEvent,
-};
 use pack_runtime::{BootstrapGenerationDisposition, classify_bootstrap_generation};
+use {
+    crate::runtime::network::{
+        EquipmentIngress, publish_equipment_identity, route_equipment_ingress,
+    },
+    client_runtime::inventory::{
+        publish_bootstrap_inventory, route_inventory_ingress, route_item_registry_ingress,
+    },
+    client_session::SequencedWorldEvent,
+};
 use {
     client_ui::ui_runtime::UiRuntime,
     inventory::{
@@ -37,6 +41,7 @@ fn bootstrap_registry_precedes_authority_and_enables_first_occupied_merge() {
     let mut runtime = UiRuntime::new(7);
     let registry = ItemRegistryEvent {
         entries: std::sync::Arc::from([ItemRegistryEntry {
+            components: None,
             identifier: "minecraft:apple".into(),
             network_id: 878,
             component_based: true,
@@ -164,7 +169,7 @@ fn session_replacement_clears_published_identity_and_local_selection() {
         EquipmentIngress::CommitOnly { fifo_sequence: 1 }
     );
 
-    crate::session::begin_session(&mut runtime, &mut player_runtime, 2);
+    client_runtime::session::begin_session(&mut runtime, &mut player_runtime, 2);
     assert!(runtime.local_selected_equipment(&player_runtime).is_none());
     assert_eq!(
         route_equipment_ingress(
@@ -277,7 +282,7 @@ fn inventory_handoff_is_bounded_session_scoped_and_fifo_ordered() {
             .is_err()
     );
 
-    crate::session::begin_session(&mut runtime, &mut player_runtime, 8);
+    client_runtime::session::begin_session(&mut runtime, &mut player_runtime, 8);
     assert!(runtime.pop_inventory_event(&mut player_runtime).is_none());
 }
 
@@ -333,6 +338,7 @@ fn item_registry_and_inventory_authority_share_one_bounded_fifo() {
         .unwrap();
     let registry = ItemRegistryEvent {
         entries: std::sync::Arc::from([ItemRegistryEntry {
+            components: None,
             identifier: "minecraft:apple".into(),
             network_id: 6,
             component_based: true,

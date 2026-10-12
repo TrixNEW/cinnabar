@@ -15,8 +15,8 @@ use bevy::{
     time::{Real, Time},
 };
 use chunk_pipeline::WorldStream;
-use protocol::{ActorKind, BedrockSession, WorldBootstrap, WorldEvent};
-use render::{ActorRenderFrame, RuntimeStage, RuntimeStageProfiler};
+use protocol::{ActorKind, WorldBootstrap, WorldEvent};
+use render_scene::{ActorRenderFrame, RuntimeStage, RuntimeStageProfiler};
 
 use {
     crate::runtime::network::{advance_actor_frame, prepare_actor_render_frame},
@@ -41,7 +41,7 @@ const COMPILED: &str = "../.local/assets/compiled";
 /// Resolves the pinned world carrier name from the startup path rather than duplicating it.
 fn world_carrier(compiled: &Path) -> PathBuf {
     compiled.join(
-        Path::new(crate::asset_startup::DEFAULT_ASSET_PATH)
+        Path::new(assets::carriers::startup::DEFAULT_ASSET_PATH)
             .file_name()
             .unwrap(),
     )
@@ -126,7 +126,6 @@ fn write_varint(out: &mut Vec<u8>, mut value: u64) {
 
 /// Feeds one captured packet through the client's decoder into the stream.
 struct Replay {
-    session: BedrockSession,
     sequence: u64,
     local_position: [f32; 3],
     local_runtime_id: u64,
@@ -146,7 +145,7 @@ impl Replay {
         write_varint(&mut batch, (header.len() + body.len()) as u64);
         batch.extend_from_slice(&header);
         batch.extend_from_slice(body);
-        let packets = match protocol::decode_batch(batch.into(), &self.session) {
+        let packets = match protocol::decode_batch(batch.into()) {
             Ok(packets) => packets,
             Err(error) => {
                 self.reject(id, error.to_string());
@@ -262,23 +261,25 @@ fn build_world(
     let compiled = PathBuf::from(
         std::env::var_os("CINNABAR_RENDER_CARRIERS").unwrap_or_else(|| COMPILED.into()),
     );
-    let loaded = crate::asset_startup::load_runtime_assets(crate::asset_startup::AssetSelection {
-        path: world_carrier(&compiled),
-        source: crate::asset_startup::AssetPathSource::CommandLine,
-    })
-    .unwrap();
+    let mut loaded =
+        assets::carriers::startup::load_runtime_assets(assets::carriers::startup::AssetSelection {
+            path: world_carrier(&compiled),
+            source: assets::carriers::startup::AssetPathSource::CommandLine,
+        })
+        .unwrap();
     let entity_runtime = Arc::clone(loaded.entities.runtime());
-    let artwork = crate::asset_startup::actor_artwork(
-        &crate::asset_startup::require_actor_assets(&loaded.selected_path, &loaded.entities)
+    crate::asset_bindings::install_world_sidecars(&mut loaded);
+    let artwork = crate::asset_bindings::actor_artwork(
+        &assets::carriers::startup::require_actor_assets(&loaded.selected_path, &loaded.entities)
             .unwrap(),
         &entity_runtime,
     );
-    let icons = crate::asset_startup::require_icon_assets(
+    let icons = assets::carriers::startup::require_icon_assets(
         &loaded.selected_path,
-        crate::asset_startup::vanilla_source_manifest_json(),
+        assets::carriers::startup::vanilla_source_manifest_json(),
     )
     .unwrap();
-    let equipment_catalog = crate::asset_startup::load_optional_equipment_assets(
+    let equipment_catalog = assets::carriers::startup::load_optional_equipment_assets(
         &loaded.selected_path,
         &loaded.entities,
     );
@@ -291,7 +292,7 @@ fn build_world(
             crate::block_entities::load_block_entity_carrier(&loaded.selected_path),
             artwork,
         );
-    let mut scene = render::ActorRenderScene::with_runtime_entity_assets_and_equipment(
+    let mut scene = render_scene::ActorRenderScene::with_runtime_entity_assets_and_equipment(
         &entity_runtime,
         &equipment_geometries,
     )
@@ -332,7 +333,6 @@ fn build_world(
         stream.seed_property_defaults(defaults);
     }
     let mut replay = Replay {
-        session: BedrockSession { shield_item_id: 0 },
         sequence: 0,
         local_position: capture.bootstrap.player_position,
         local_runtime_id: capture.bootstrap.local_player_runtime_id,

@@ -1,5 +1,7 @@
 use super::*;
+use crate::runtime::network::resource_packs::PackApplication;
 use bevy::ecs::schedule::{IntoSystemSet, NodeId, ScheduleGraph, Schedules, SystemSet};
+use client_runtime::network::NetworkHandle;
 use server_experience::{
     manifest::{Offer, Scope},
     negotiation::{Grant, VerifiedOffer},
@@ -66,12 +68,14 @@ fn join_app(state: State) -> App {
     runtime.experiences.session.state = state;
     let mut app = App::new();
     app.insert_resource(MenuRuntime::new(false, 2, "Test".into()))
-        .insert_resource(runtime)
+        .insert_resource(UiRuntimeResource(runtime))
         .insert_resource(client_state::PlayerRuntime(player_state::PlayerState::new(
             1,
         )))
-        .insert_resource(client_ui::test_support::mini_engine_presentation())
-        .insert_resource(NetworkHandle::disconnected())
+        .insert_resource(UiPresentationResource(
+            client_ui::test_support::mini_engine_presentation(),
+        ))
+        .insert_resource(NetworkHandle::<PackApplication>::disconnected())
         .init_resource::<ClientWorld>()
         .init_resource::<Time<Real>>()
         .init_resource::<ButtonInput<KeyCode>>()
@@ -86,6 +90,7 @@ fn join_app(state: State) -> App {
         },
         PrimaryWindow,
     ));
+    app.add_plugins(client_extensions::ClientExtensionsPlugin);
     configure(&mut app);
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut service = app.world_mut().resource_mut::<ExperienceService>();
@@ -102,11 +107,11 @@ fn join_app(state: State) -> App {
 /// Presents one frame, as the renderer does between controller updates.
 fn present(app: &mut App) {
     app.world_mut()
-        .resource_scope(|world, mut presentation: Mut<UiPresentationRuntime>| {
+        .resource_scope(|world, mut presentation: Mut<UiPresentationResource>| {
             presentation
                 .build(
                     world.resource::<client_state::PlayerRuntime>(),
-                    world.resource::<UiRuntime>(),
+                    world.resource::<UiRuntimeResource>(),
                     0,
                     [1280, 720],
                     ui::DpiScale::new(1.0).unwrap(),
@@ -116,9 +121,7 @@ fn present(app: &mut App) {
 }
 
 fn consent_owned(app: &App) -> bool {
-    app.world()
-        .resource::<super::super::input::ConsentInput>()
-        .0
+    app.world().resource::<client_state::ConsentInput>().0
 }
 
 #[test]
@@ -129,7 +132,7 @@ fn join_offer_opens_the_trusted_popup_and_owns_input_without_a_menu() {
     present(&mut app);
     assert!(
         app.world()
-            .resource::<UiPresentationRuntime>()
+            .resource::<UiPresentationResource>()
             .experience_prompt_visible()
     );
 }
@@ -151,7 +154,7 @@ fn popup_keys_answer_the_offer_and_then_release_input() {
         assert!(
             matches!(
                 app.world()
-                    .resource::<UiRuntime>()
+                    .resource::<UiRuntimeResource>()
                     .experiences
                     .session
                     .state,
@@ -198,7 +201,7 @@ fn running_or_disabled_experiences_never_open_the_popup() {
         assert!(!consent_owned(&app));
         assert!(
             !app.world()
-                .resource::<UiPresentationRuntime>()
+                .resource::<UiPresentationResource>()
                 .experience_prompt_visible()
         );
     }
@@ -233,6 +236,7 @@ fn controller_follows_committed_drain_before_semantic_input() {
     app.insert_resource(MenuRuntime::new(false, 2, "Test".into()));
     configure_client_frame_schedule(&mut app);
     configure_client_production_frame_systems(&mut app);
+    app.add_plugins(client_extensions::ClientExtensionsPlugin);
     configure(&mut app);
     let schedules = app.world().resource::<Schedules>();
     let graph = schedules.get(Update).unwrap().graph();
@@ -314,10 +318,12 @@ fn committed_dimension_transition_revokes_live_runtime_in_the_same_frame() {
     runtime.experiences.session.state = State::Granted(grant.clone());
     let mut app = App::new();
     app.insert_resource(MenuRuntime::new(false, 2, "Test".into()))
-        .insert_resource(runtime)
+        .insert_resource(UiRuntimeResource(runtime))
         .insert_resource(player_runtime.clone())
-        .insert_resource(UiPresentationRuntime::new(fixture_font()).unwrap())
-        .insert_resource(NetworkHandle::disconnected())
+        .insert_resource(UiPresentationResource(
+            UiPresentationRuntime::new(fixture_font()).unwrap(),
+        ))
+        .insert_resource(NetworkHandle::<PackApplication>::disconnected())
         .insert_resource(ClientWorld {
             stream: Some(stream),
             ..Default::default()
@@ -331,6 +337,7 @@ fn committed_dimension_transition_revokes_live_runtime_in_the_same_frame() {
         .add_message::<bevy::input::mouse::MouseButtonInput>()
         .add_systems(Update, drain_committed_ui_before_authority);
     configure_client_frame_schedule(&mut app);
+    app.add_plugins(client_extensions::ClientExtensionsPlugin);
     configure(&mut app);
     let mut service = app.world_mut().resource_mut::<ExperienceService>();
     service.generation = 1;
@@ -347,7 +354,7 @@ fn committed_dimension_transition_revokes_live_runtime_in_the_same_frame() {
         .unwrap(),
     );
     app.update();
-    let extension = &app.world().resource::<UiRuntime>().experiences;
+    let extension = &app.world().resource::<UiRuntimeResource>().experiences;
     assert_eq!(extension.epoch, new_epoch);
     assert!(matches!(extension.session.state, State::Disabled));
     assert!(!extension.active);
@@ -382,10 +389,10 @@ fn unadvertised_experience_preserves_input_and_rendered_menu() {
     snapshot::write(&before, "experience-unadvertised-before");
     let mut app = App::new();
     app.insert_resource(menu)
-        .insert_resource(runtime)
+        .insert_resource(UiRuntimeResource(runtime))
         .insert_resource(player_runtime.clone())
-        .insert_resource(presentation)
-        .insert_resource(NetworkHandle::disconnected())
+        .insert_resource(UiPresentationResource(presentation))
+        .insert_resource(NetworkHandle::<PackApplication>::disconnected())
         .init_resource::<ClientWorld>()
         .init_resource::<Time<Real>>()
         .init_resource::<ButtonInput<KeyCode>>()
@@ -393,6 +400,7 @@ fn unadvertised_experience_preserves_input_and_rendered_menu() {
         .add_message::<KeyboardInput>()
         .add_message::<MouseButtonInput>()
         .add_message::<bevy::input::mouse::MouseWheel>();
+    app.add_plugins(client_extensions::ClientExtensionsPlugin);
     configure(&mut app);
     app.world_mut()
         .resource_mut::<ButtonInput<KeyCode>>()
@@ -401,11 +409,7 @@ fn unadvertised_experience_preserves_input_and_rendered_menu() {
         .resource_mut::<ButtonInput<MouseButton>>()
         .press(MouseButton::Left);
     app.update();
-    assert!(
-        !app.world()
-            .resource::<super::super::input::ConsentInput>()
-            .0
-    );
+    assert!(!app.world().resource::<client_state::ConsentInput>().0);
     assert!(
         app.world()
             .resource::<ButtonInput<KeyCode>>()
@@ -420,10 +424,10 @@ fn unadvertised_experience_preserves_input_and_rendered_menu() {
     assert!(service.settings.is_none());
     assert!(service.download.is_none());
     assert!(service.live.is_none());
-    let runtime = app.world().resource::<UiRuntime>().clone();
+    let runtime = app.world().resource::<UiRuntimeResource>().clone();
     let after = app
         .world_mut()
-        .resource_mut::<UiPresentationRuntime>()
+        .resource_mut::<UiPresentationResource>()
         .build(
             &player_runtime,
             &runtime,
@@ -439,7 +443,7 @@ fn unadvertised_experience_preserves_input_and_rendered_menu() {
 #[test]
 fn consent_answer_retains_capture_return_through_its_owned_frame() {
     use bevy::window::{CursorGrabMode, CursorOptions};
-    use client_presentation::camera::CursorFocus;
+    use client_state::CursorFocus;
     for key in [KeyCode::Escape, KeyCode::F8, KeyCode::F6] {
         let mut app = join_app(State::Offered(offer()));
         app.init_resource::<CursorFocus>()
@@ -449,11 +453,11 @@ fn consent_answer_retains_capture_return_through_its_owned_frame() {
             .add_systems(
                 Update,
                 (
-                    crate::menu::screen_focus::publish_screen_focus,
+                    client_shell::menu::screen_focus::publish_screen_focus,
                     crate::camera::update_cursor_capture,
                 )
                     .chain()
-                    .after(super::super::input::consume),
+                    .after(client_state::ExperienceInputSet),
             );
         let window = app
             .world_mut()
@@ -487,7 +491,7 @@ fn consent_answer_retains_capture_return_through_its_owned_frame() {
         assert!(consent_owned(&app));
         assert!(!matches!(
             app.world()
-                .resource::<UiRuntime>()
+                .resource::<UiRuntimeResource>()
                 .experiences
                 .session
                 .state,

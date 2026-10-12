@@ -1,5 +1,11 @@
 # Phases 2-5 Completion Ledger
 
+Startup carrier selection, bounded decoding, validation and fallbacks now belong to
+`assets::carriers::startup`. App adapters retain renderer and pack publication, Bevy resources,
+load timing and fatal startup handling. Carrier regressions move with their owner;
+app composition coverage remains in `app`. This move adds no compilation, execution
+or live evidence, and all behavior and performance gates retain their status.
+
 End-rod terrain coverage now includes the six facing states, separate shaft/base sprite
 mapping and an original-art GPU fixture. This bounded geometry correction leaves the
 exhaustive residual-family, world-join and hardware performance gates open.
@@ -43,6 +49,12 @@ Spectator regressions cover forced flight without MayFly, solid and unloaded
 terrain traversal, and embedded server anchors. The full native trajectory,
 platform, and performance gates remain open.
 
+Server-defined vehicle seats have deterministic coverage for actor-origin conversion,
+yaw, scale, link ordering, updates and removal. Dismount request coverage includes
+vehicle controls, queue retries and session/input boundaries. Authored seat fallbacks,
+special family placement, predictive exit placement and vehicle prediction remain
+incomplete; this work closes no movement parity or performance gate.
+
 | Field | Evidence |
 |---|---|
 | Owning plan/task | `docs/superpowers/plans/2026-07-17-phase-3-movement-controls-camera.md`, Tasks 8-14 |
@@ -52,12 +64,36 @@ platform, and performance gates remain open.
 | Performance/resource witness | Current tranche not run; bounded live JSON records remain required. |
 | Final status | Open -- deterministic integration advanced; normal Physics enable and binding live evidence remain gated. |
 
+Runtime queue ownership, publication budgeting, world-service schedules, shutdown,
+session helpers and pack geometry preparation now belong to `client-runtime`.
+App adapters retain menu, movement, presentation and audio integration. Existing
+regressions follow the moved owners or continue exercising app composition; this
+extraction is incomplete and adds no compiled, executed or live parity evidence.
+
 ## P3.4-INPUT-CAMERA
 
+`client-interaction` owns camera input adapters, movement resource wrappers and
+hotbar sampling, plus item-use and placement observations. App-owned world,
+transport and screen adapters still drive the remaining interactions and block
+selection. This extraction is incomplete and has not been compiled or tested;
+no movement, input or interaction acceptance gate is closed by the move.
+
 Frame sets and shared player, settings and finalized-input resources now live in
-`client-state`. The shell publishes focus for gameplay and camera input; the input
-and cursor regressions retain their domain owners. This ownership change has not
-been compiled or executed, and does not close this gate.
+`client-state`. `ClientShellPlugin` owns menu input, fullscreen and settings drivers
+and publishes focus for gameplay and camera input. Desktop focus transitions live
+in `semantic-input`; its Bevy wrapper stays in `client-state`. The shell also owns
+launcher/local-world resources, appearance selection and Discord presence, using
+shared session observations instead of sibling plugin dependencies. Session,
+network and audio adapters remain in `app`. Menu tests moved with their owner;
+combined session, inventory and present-mode checks remain in `app`. These moves
+have not been compiled or executed and do not close this gate.
+
+`client-extensions` now owns personal component collection and callback merging,
+permission grants, player snapshots, panel fonts, and server consent input and text.
+Consent state and ordering live in `client-state`. The coupled session, gameplay,
+menu, render and audio adapters remain in `app`; the extraction and its execution
+validation are incomplete. The moved tests retain their assertions, and this move
+closes no acceptance gate.
 
 Spectator hand suppression and no-clip inside-block overlays have owning
 behavioral regressions. Runtime skin controller visibility precedes equipment, and
@@ -100,6 +136,11 @@ material/shader linkage remain open.
 | Live/native witness | Not started |
 | Performance/resource witness | Not started |
 | Final status | Open |
+
+Actor rigs, Molang evaluation, controllers and poses live in Bevy-free
+`actor-animation`, which reads actors through its `AnimatedActor` seam.
+Tests that drive actor authority stay in `client-world`. Compilation and
+execution of this move are unverified, and it adds no parity evidence.
 
 ## P4.5-ITEM-ACTIONS
 
@@ -165,7 +206,7 @@ camera-listener coverage. This ownership change adds no new parity evidence.
 
 | Field | Evidence |
 |---|---|
-| Owning plan/task | Partial local placement coverage; see the Local placement prediction section in plan.md. |
+| Owning plan/task | Partial local placement coverage and compiled movement/selection ownership; see Local placement prediction and Block selection outlines and visual bounds in plan.md. |
 | Deterministic tests | Gameplay direction, support, stacking and immediate-placement tables in both palette encodings; pipeline atomic pair, rollback and ordered publication tests. Item-use tests cover frame/tick slot changes, the native rearm boundary, category cooldowns, rejected-send rollback and hotbar cooldown publication. |
 | Review commit | Recorded by the placement follow-up PR. |
 | Live/native witness | Headless stair comparison and door pair before server confirmation; broader family visual parity remains open. |
@@ -227,6 +268,22 @@ Selection shape parity and displayed-frame performance gates remain open.
 
 Block overlays use the shared pack compiler to resolve legacy geometry inheritance before projecting faces. Parents may come from other model files or pack layers; missing parents, cycles and chains beyond the depth limit are rejected. Budget-limited reads admit higher-priority definitions first. No existing completion entry is advanced by this change; the remaining gates are recorded in `plan.md`.
 
+## Render ownership boundary
+
+CPU block models, dropped items, actor rigs and viewmodel meshes live in
+`render-model`. Bevy submission resources and presentation acknowledgements live
+in `render-scene`; presentation and acceptance have no dependency on `render`.
+GPU passes remain in `render`. Existing regression coverage is retained, but
+compilation and execution of these moves are unverified. No parity or performance
+gate is closed by the ownership change.
+
 ## Session biome climate and environment
 
 Admitted live biome identifiers and climate now travel with the session tint registry. Weather, fog precipitation, camera temperature and environment routes read that registry, including custom biome routes. Registry replacement clears removed routes. No existing completion entry is advanced by this change; the remaining gates are recorded in `plan.md`.
+
+## Protocol session layer
+
+`protocol::login` runs the spawn sequence and play stream over the core's session endpoint, and
+the vendored client session crate is removed. Startup ordering, terminal transfers and
+disconnects, and the one-shot initialization keep their regression coverage through a scripted
+core; those tests have not been executed locally. No existing completion entry is advanced.

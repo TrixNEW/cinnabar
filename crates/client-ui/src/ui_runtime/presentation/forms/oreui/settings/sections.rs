@@ -1,23 +1,22 @@
 //! Settings registry sections share the launcher’s persisted options and binding actions.
 
-use super::super::super::super::UiPresentationError;
-use super::super::theme::{self, BODY, EDGE, NEUTRAL80, TEXT};
-use super::super::widgets::Interaction;
+use super::super::super::engine::screen::PaintError;
+use super::super::theme::{self, BODY, CAPTION, EDGE, NEUTRAL80, TEXT, TEXT_DIMMER};
+use super::super::widgets::{self, Interaction};
 use super::{Content, button};
 use launcher::menu::{
-    MenuAction,
+    MenuAction, MenuField,
     settings_options::{
-        ANIMATIONS_OPTION, CHAT_POSITION_OPTION, EXTRA_GAMEPAD, EXTRA_KEYS, GAMEPAD_BINDINGS,
-        GAMEPAD_OFFSET, INVERT_CROSSHAIR_OPTION, KEY_BINDINGS, MOTION_BLUR_OPTION, SMAA_OPTION,
-        SettingsGroup, SettingsOptions, THIRD_PERSON_CROSSHAIR_OPTION, VOLUME_SETTINGS, key_name,
+        ANIMATIONS_OPTION, CHAT_POSITION_OPTION, COMMAND_MACRO_COUNT, EXTRA_GAMEPAD, EXTRA_KEYS,
+        GAMEPAD_BINDINGS, GAMEPAD_OFFSET, INVERT_CROSSHAIR_OPTION, KEY_BINDINGS,
+        MOTION_BLUR_OPTION, SMAA_OPTION, SettingsGroup, SettingsOptions,
+        THIRD_PERSON_CROSSHAIR_OPTION, VOLUME_SETTINGS, key_name, macro_message, macro_row,
+        macro_row_index, macro_title,
     },
     settings_support::{SupportAction, SupportDialog, SupportLink},
 };
 
-pub(super) fn draw(
-    content: &mut Content<'_, '_>,
-    section: &str,
-) -> Result<(), UiPresentationError> {
+pub(super) fn draw(content: &mut Content<'_, '_>, section: &str) -> Result<(), PaintError> {
     if super::services::draw(content, section)? {
         return Ok(());
     }
@@ -33,14 +32,14 @@ pub(super) fn draw(
     }
 }
 
-fn options(content: &mut Content<'_, '_>, names: &[&str]) -> Result<(), UiPresentationError> {
+fn options(content: &mut Content<'_, '_>, names: &[&str]) -> Result<(), PaintError> {
     for name in names {
         content.option(name)?;
     }
     Ok(())
 }
 
-fn accessibility(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn accessibility(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading(
         "menu.accessibility.tab.title",
         "menu.accessibility.tab.description",
@@ -99,7 +98,7 @@ fn accessibility(content: &mut Content<'_, '_>) -> Result<(), UiPresentationErro
     )
 }
 
-fn video(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn video(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading("menu.video.tab.title", "menu.video.tab.description")?;
     content.heading(
         "menu.video.group.general",
@@ -184,17 +183,13 @@ fn video(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
     reset(content, SettingsGroup::Video, "options.video.resetSettings")
 }
 
-fn audio(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn audio(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading("menu.audio.tab.title", "menu.audio.tab.description")?;
     options(content, &VOLUME_SETTINGS)?;
     reset(content, SettingsGroup::Audio, "options.sound.resetSettings")
 }
 
-fn reset(
-    content: &mut Content<'_, '_>,
-    group: SettingsGroup,
-    key: &str,
-) -> Result<(), UiPresentationError> {
+fn reset(content: &mut Content<'_, '_>, group: SettingsGroup, key: &str) -> Result<(), PaintError> {
     super::services::action_row(
         content,
         key,
@@ -204,7 +199,7 @@ fn reset(
     )
 }
 
-fn keyboard(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn keyboard(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading(
         "menu.keyboardAndMouse.tab.title",
         "menu.keyboardAndMouse.tab.description",
@@ -225,6 +220,7 @@ fn keyboard(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
         "menu.keyboardAndMouse.tab.mappings.description",
     )?;
     bindings(content, false)?;
+    draw_macros(content)?;
     super::services::action_row(
         content,
         "options.keyboardAndMouse.resetMappings",
@@ -234,7 +230,189 @@ fn keyboard(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
     )
 }
 
-fn controller(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn draw_macros(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
+    content.heading(
+        "menu.keyboardAndMouse.tab.macros.title",
+        "menu.keyboardAndMouse.tab.macros.description",
+    )?;
+    for slot in 0..COMMAND_MACRO_COUNT {
+        draw_macro_slot(content, slot)?;
+    }
+    Ok(())
+}
+
+/// One macro slot: its title with the bound key, then the command box beneath.
+fn draw_macro_slot(content: &mut Content<'_, '_>, slot: usize) -> Result<(), PaintError> {
+    draw_macro_binding(content, slot)?;
+    draw_macro_command(content, slot)
+}
+
+fn draw_macro_binding(content: &mut Content<'_, '_>, slot: usize) -> Result<(), PaintError> {
+    let capture = MenuAction::SettingsKey(macro_row_index(slot) as u16);
+    let control = content.view.settings_options.macro_control(slot);
+    let capturing = content
+        .view
+        .key_remap
+        .is_some_and(|index| macro_row(usize::from(index)) == Some(slot));
+    let title = content.word(&macro_title(slot));
+    let [left, right] = content.inset();
+    let field_width = ((right - left) * 0.5).min(content.canvas.r(24.0));
+    let reset_width = if control.is_some() && !capturing {
+        content.canvas.r(5.2)
+    } else {
+        0.0
+    };
+    let label_width = (right - left - field_width - reset_width - content.canvas.r(0.8)).max(1.0);
+    let bounds = content.row(
+        &title,
+        "",
+        label_width,
+        Some(capture),
+        content.canvas.r(2.8),
+    )?;
+    let middle = (bounds[1] + bounds[3]) * 0.5;
+    content.canvas.text(
+        &title,
+        [left, middle - content.canvas.r(1.0)],
+        label_width,
+        BODY,
+        TEXT,
+        false,
+    )?;
+    let field = [
+        right - field_width,
+        middle - content.canvas.r(2.4),
+        right,
+        middle + content.canvas.r(2.4),
+    ];
+    let state = Interaction::of(content.view, Some(capture));
+    content.canvas.fill(field, theme::BORDER)?;
+    let edge = content.canvas.r(EDGE);
+    let face = [
+        field[0] + edge,
+        field[1] + edge,
+        field[2] - edge,
+        field[3] - edge,
+    ];
+    content.canvas.fill(
+        face,
+        if state.hovered {
+            NEUTRAL80.hovered
+        } else {
+            NEUTRAL80.fill
+        },
+    )?;
+    content.canvas.fill(
+        [face[0], face[1], face[2], face[1] + content.canvas.r(0.4)],
+        NEUTRAL80.shadow,
+    )?;
+    if state.focused || capturing {
+        content.canvas.frame(field, EDGE, theme::OUTLINE)?;
+    }
+    let value = if capturing {
+        "...".to_owned()
+    } else {
+        control.map_or_else(
+            || content.word("controllerLayoutScreen.unassigned"),
+            key_name,
+        )
+    };
+    content
+        .canvas
+        .text_centred(&value, face, BODY, TEXT, false)?;
+    content.canvas.hit(capture, field)?;
+    if control.is_some() && !capturing {
+        let reset = [
+            field[0] - content.canvas.r(5.2),
+            middle - content.canvas.r(2.0),
+            field[0] - content.canvas.r(0.8),
+            middle + content.canvas.r(2.4),
+        ];
+        button::binding_reset(
+            content.canvas,
+            content.view,
+            reset,
+            MenuAction::SettingsResetKey(macro_row_index(slot) as u16),
+        )?;
+    }
+    Ok(())
+}
+
+fn draw_macro_command(content: &mut Content<'_, '_>, slot: usize) -> Result<(), PaintError> {
+    let action = MenuAction::SettingsMacroCommand(slot);
+    let command = content
+        .view
+        .macro_commands
+        .as_ref()
+        .map_or_else(
+            || content.view.settings_options.macro_command(slot),
+            |drafts| drafts[slot].as_str(),
+        )
+        .to_owned();
+    let focused = content.view.field == Some(MenuField::MacroCommand(slot));
+    let placeholder = content.word("options.commandMacro.placeholder");
+    let [left, right] = content.inset();
+    let error = (!command.is_empty() && macro_message(&command).is_err()).then(|| {
+        format!(
+            "Command is too long. Include the slash within the {}-byte chat limit.",
+            ui::MAX_CHAT_INPUT_BYTES
+        )
+    });
+    let error_height = if let Some(error) = &error {
+        content
+            .canvas
+            .measure_height(error, right - left, CAPTION)?
+            + content.canvas.r(0.4)
+    } else {
+        0.0
+    };
+    let bounds = content.row(
+        "",
+        "",
+        right - left,
+        Some(action),
+        content.canvas.r(2.8) + error_height,
+    )?;
+    let middle = (bounds[1] + bounds[3] - error_height) * 0.5;
+    let field = [
+        left,
+        middle - content.canvas.r(2.4),
+        right,
+        middle + content.canvas.r(2.4),
+    ];
+    let capture_focus = content.canvas.capture_focus;
+    if error.is_some() {
+        // Reveal the field and error together without enlarging pointer caret targets.
+        content
+            .canvas
+            .focus_target(action, [field[0], bounds[1], field[2], bounds[3]])?;
+        content.canvas.capture_focus = false;
+    }
+    let result = widgets::text_field_on_panel(
+        content.canvas,
+        content.view,
+        field,
+        &command,
+        &placeholder,
+        focused,
+        Some(action),
+    );
+    content.canvas.capture_focus = capture_focus;
+    result?;
+    if let Some(error) = error {
+        content.canvas.text(
+            &error,
+            [left, field[3] + content.canvas.r(0.4)],
+            right - left,
+            CAPTION,
+            TEXT_DIMMER,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+fn controller(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading(
         "menu.controller.tab.title",
         "menu.controller.tab.description",
@@ -267,7 +445,7 @@ fn controller(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> 
     )
 }
 
-fn bindings(content: &mut Content<'_, '_>, gamepad: bool) -> Result<(), UiPresentationError> {
+fn bindings(content: &mut Content<'_, '_>, gamepad: bool) -> Result<(), PaintError> {
     let defaults = SettingsOptions::default();
     if gamepad {
         for (index, label) in GAMEPAD_BINDINGS
@@ -296,7 +474,7 @@ fn binding(
     defaults: &SettingsOptions,
     index: usize,
     key: &str,
-) -> Result<(), UiPresentationError> {
+) -> Result<(), PaintError> {
     let action = MenuAction::SettingsKey(index as u16);
     let capturing = content.view.key_remap == Some(index as u16);
     let control = content.view.settings_options.key_control(index);
@@ -408,7 +586,7 @@ fn gamepad_name(control: semantic_input::PhysicalControl) -> String {
     }
 }
 
-fn general(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn general(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading("menu.general.tab.title", "menu.general.tab.description")?;
     options(content, &["only_trusted_skins_allowed", "filter_profanity"])?;
     content.heading(
@@ -462,7 +640,7 @@ fn general(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
     Ok(())
 }
 
-fn creator(content: &mut Content<'_, '_>) -> Result<(), UiPresentationError> {
+fn creator(content: &mut Content<'_, '_>) -> Result<(), PaintError> {
     content.heading("menu.creator.tab.title", "menu.creator.tab.description")?;
     content.option("copy_coordinate_ui")?;
     for (title, names) in [
@@ -573,6 +751,11 @@ pub(super) fn fallback(key: &str) -> &str {
         "menu.keyboardAndMouse.tab.mappings.description" => {
             "Remap any and all keyboard & mouse buttons to play your way"
         }
+        "menu.keyboardAndMouse.tab.macros.title" => "Macros",
+        "menu.keyboardAndMouse.tab.macros.description" => {
+            "Assign a keyboard input that will run a command when pressing ALT and the bound key"
+        }
+        "options.commandMacro.placeholder" => "Command to run",
         "menu.controller.tab.title" | "options.controller" => "Controller",
         "menu.controller.tab.description" => {
             "Input options, sensitivity settings and button mapping for controllers"

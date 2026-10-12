@@ -1,23 +1,21 @@
 //! App schedule and borrowed observations for presentation audio.
-use bevy::prelude::{App, IntoScheduleConfigs, Local, MessageReader, Res, ResMut, Time, Update};
+use bevy::prelude::IntoScheduleConfigs;
+use bevy::prelude::{App, Local, MessageReader, Res, ResMut, Time, Update};
 use client_audio::audio::{
     AudioSettings,
     local::LocalMotion,
     systems::{AmbientState, IngestState, UiSoundCue},
 };
 use client_audio::audio_ingress::SequencedAudioEvent;
-use render::{ParticleSimulation, RuntimeStage, RuntimeStageProfiler};
+use render_scene::{ParticleSimulation, RuntimeStage, RuntimeStageProfiler};
 use std::collections::HashSet;
 use {
     super::predicted::{drive_actor_audio, drive_block_cues, drive_consume_audio},
     client_audio::audio::AudioEngine,
 };
 use {
-    crate::{
-        movement::{LocalPhysicsController, PhysicsCollisionRegistries},
-        particles::ParticleInbox,
-        runtime::world::ClientWorld,
-    },
+    crate::{particles::ParticleInbox, runtime::world::ClientWorld},
+    client_interaction::movement::{LocalPhysicsController, PhysicsCollisionRegistries},
     client_presentation::local_player::LocalViewPose,
 };
 
@@ -133,7 +131,7 @@ pub(crate) fn drive_ambience(
     collisions: Option<Res<PhysicsCollisionRegistries>>,
     view: Res<LocalViewPose>,
     player_runtime: Option<Res<client_state::PlayerRuntime>>,
-    ui: Option<Res<client_ui::ui_runtime::UiRuntime>>,
+    ui: Option<Res<client_shell::ui_resources::UiRuntimeResource>>,
     engine: ResMut<AudioEngine>,
     state: Local<AmbientState>,
     profiler: Option<Res<RuntimeStageProfiler>>,
@@ -228,7 +226,7 @@ mod tests {
     #[test]
     fn pump_attributes_its_own_work_to_the_audio_stage() {
         use bevy::prelude::{App, Update};
-        let profiler = render::RuntimeStageProfiler::new(true);
+        let profiler = render_scene::RuntimeStageProfiler::new(true);
         let mut app = App::new();
         app.insert_resource(profiler.clone())
             .init_resource::<Time>()
@@ -242,7 +240,7 @@ mod tests {
             .take_snapshot_if_due(std::time::Duration::ZERO)
             .expect("enabled profiler");
         assert_eq!(
-            snapshot.samples[render::RuntimeStage::Audio as usize].count,
+            snapshot.samples[render_scene::RuntimeStage::Audio as usize].count,
             2
         );
     }

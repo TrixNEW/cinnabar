@@ -1,5 +1,4 @@
 //! Bounded Bedrock resource-pack source readers.
-
 mod actor;
 mod atmosphere;
 mod audio;
@@ -8,19 +7,20 @@ pub mod bamboo;
 pub mod banner;
 mod biome;
 mod biome_noise;
-mod blob;
+pub mod blob;
 mod block_entity;
 pub mod block_entity_geometry;
 mod block_names;
 mod block_presentation_state;
 pub use block_presentation_state::pinned_block_presentation_states;
 pub use block_presentation_state::{BlockPresentationState, BlockPresentationStates, PortalAxis};
+pub mod block_shapes;
 pub mod carriers;
-mod compiled;
+pub mod compiled;
 pub mod dye;
 mod effects;
 mod encoding;
-mod entity;
+pub mod entity;
 mod environment_settings;
 mod equipment;
 mod error;
@@ -33,9 +33,9 @@ mod fsb;
 mod glyph_sheet;
 pub mod gui_item;
 mod hud;
-mod hud_extras;
+pub mod hud_extras;
 mod icon;
-mod item;
+pub mod item;
 mod lang;
 mod light_registry;
 mod material_keys;
@@ -47,7 +47,7 @@ mod physics_registry;
 mod pinned_content;
 mod potion;
 mod provenance;
-mod registry;
+pub mod registry;
 mod runtime;
 mod seasonal_foliage;
 mod server_lang;
@@ -62,7 +62,7 @@ mod texture;
 mod ui;
 pub mod vanilla_pack;
 mod vanilla_refs;
-mod weather_textures;
+pub mod weather_textures;
 pub use actor::{
     ACTOR_CARRIER_MAGIC, ACTOR_CARRIER_VERSION, ActorArtworkBinding, ActorPoseMode, ActorTexture,
     MAX_ACTOR_BINDINGS, MAX_ACTOR_CARRIER_BYTES, MAX_ACTOR_PIXEL_BYTES, MAX_ACTOR_TEXTURE_SIDE,
@@ -96,30 +96,30 @@ pub use biome::{
     DEFAULT_WATER_APPEARANCE_OPACITY, DEFAULT_WATER_OPACITY, DEFAULT_WATER_RGB, LinearBiomeTints,
     LiveBiomeDefinition, MAX_BIOME_NAME_BYTES, MAX_BIOME_NAMES_BYTES, MAX_BIOME_RULES,
     MISSING_BIOME_DENSE_INDEX, RAW_BIOME_ID_COUNT, ResolvedBiomeTints, SessionBiome,
-    TINT_MAP_BYTES, TINT_MAP_COUNT, TINT_MAP_SIZE, TintMapId, TintSource,
-    colormap_coordinate, read_biome_registry,
+    TINT_MAP_BYTES, TINT_MAP_COUNT, TINT_MAP_SIZE, TintMapId, TintSource, colormap_coordinate,
+    read_biome_registry,
 };
 pub use biome_noise::{ClientRandom, GRASS_PERMUTATION_SIZE, grass_noise_permutation};
 pub use blob::{BLOB_MAGIC, BLOB_VERSION, MATERIAL_BYTES, encode_blob, write_blob_atomic};
 pub use block_entity::{
-    BLOCK_ENTITY_CARRIER_MAGIC, BLOCK_ENTITY_CARRIER_VERSION, BLOCK_ENTITY_ROUTES,
-    BlockEntityPlacement, BlockEntityRouteKind, CRYSTAL_BEAM_TEXTURE, MAX_BLOCK_ENTITY_ATLAS_SIDE,
-    MAX_BLOCK_ENTITY_CARRIER_BYTES, MAX_BLOCK_ENTITY_KEY_BYTES, MAX_BLOCK_ENTITY_PLACEMENTS,
+    BLOCK_ENTITY_ROUTES, BlockEntityPlacement, BlockEntityRouteKind, CRYSTAL_BEAM_TEXTURE,
+    MAX_BLOCK_ENTITY_ATLAS_SIDE, MAX_BLOCK_ENTITY_CARRIER_BYTES, MAX_BLOCK_ENTITY_PLACEMENTS,
     RuntimeBlockEntityAssets, block_entity_route, encode_block_entity_catalog,
 };
 pub use block_names::{legacy_resource_pack_block_alias, vanilla_skull_type};
 pub use compiled::{
-    BlockFace, BlockVisual, CompiledAssets, DIAGNOSTIC_MATERIAL, MATERIAL_FLAG_ALPHA_BLEND,
-    MATERIAL_FLAG_ALPHA_CUTOUT, MATERIAL_FLAG_BIRCH_FOLIAGE, MATERIAL_FLAG_DISABLE_AO,
-    MATERIAL_FLAG_DISABLE_FACE_DIMMING, MATERIAL_FLAG_DRY_FOLIAGE, MATERIAL_FLAG_EVERGREEN_FOLIAGE,
-    MATERIAL_FLAG_EXPOSED_FOLIAGE, MATERIAL_FLAG_FOLIAGE_CLASS_MASK, MATERIAL_FLAG_FOLIAGE_TINT,
-    MATERIAL_FLAG_GRASS_TINT, MATERIAL_FLAG_ISOTROPIC, MATERIAL_FLAG_LIQUID_DEPTH_WRITE,
-    MATERIAL_FLAG_NATIVE_LEAF_COLOUR, MATERIAL_FLAG_OVERLAY_MASK, MATERIAL_FLAG_ROTATE_UV,
-    MATERIAL_FLAG_SEASONAL_FOLIAGE, MATERIAL_FLAG_TINT_MASK, MATERIAL_FLAG_TWO_SIDED,
-    MATERIAL_FLAG_UV_MASK, MATERIAL_FLAG_WATER_TINT, MATERIAL_FLAGS_MASK,
-    MATERIAL_LEAF_AO_EXPONENT_MASK, MATERIAL_LEAF_AO_EXPONENT_MAX, MATERIAL_LEAF_AO_EXPONENT_SCALE,
-    MATERIAL_LEAF_AO_EXPONENT_SHIFT, MATERIAL_LEAF_METADATA_MASK, MAX_MATERIALS,
-    MAX_TEXTURE_LAYERS, Material, material_leaf_ao_exponent,
+    BlockFace, BlockVisual, CAULDRON_WATER_COLOUR, CompiledAssets, DIAGNOSTIC_MATERIAL,
+    MATERIAL_FLAG_ALPHA_BLEND, MATERIAL_FLAG_ALPHA_CUTOUT, MATERIAL_FLAG_BIRCH_FOLIAGE,
+    MATERIAL_FLAG_CAULDRON_WATER, MATERIAL_FLAG_DISABLE_AO, MATERIAL_FLAG_DISABLE_FACE_DIMMING,
+    MATERIAL_FLAG_DRY_FOLIAGE, MATERIAL_FLAG_EVERGREEN_FOLIAGE, MATERIAL_FLAG_EXPOSED_FOLIAGE,
+    MATERIAL_FLAG_FOLIAGE_CLASS_MASK, MATERIAL_FLAG_FOLIAGE_TINT, MATERIAL_FLAG_GRASS_TINT,
+    MATERIAL_FLAG_ISOTROPIC, MATERIAL_FLAG_LIQUID_DEPTH_WRITE, MATERIAL_FLAG_NATIVE_LEAF_COLOUR,
+    MATERIAL_FLAG_OVERLAY_MASK, MATERIAL_FLAG_ROTATE_UV, MATERIAL_FLAG_SEASONAL_FOLIAGE,
+    MATERIAL_FLAG_TINT_MASK, MATERIAL_FLAG_TWO_SIDED, MATERIAL_FLAG_UV_MASK,
+    MATERIAL_FLAG_WATER_TINT, MATERIAL_FLAGS_MASK, MATERIAL_LEAF_AO_EXPONENT_MASK,
+    MATERIAL_LEAF_AO_EXPONENT_MAX, MATERIAL_LEAF_AO_EXPONENT_SCALE,
+    MATERIAL_LEAF_AO_EXPONENT_SHIFT, MATERIAL_LEAF_METADATA_MASK, MAX_CARRIER_TEXTURE_LAYERS,
+    MAX_MATERIALS, MAX_TEXTURE_LAYERS, Material, TEXTURE_LAYER_MASK, material_leaf_ao_exponent,
 };
 pub use effects::{
     EFFECT_DESCRIPTORS, EffectDescriptor, effect_descriptor, effect_registry_version,
@@ -165,14 +165,14 @@ pub use entity::{PACK_EQUIPMENT_INDEX_BASE, PACK_RIG_ID_BASE};
 pub use environment_settings::{CloudQuality, EnvironmentQualitySettings, PrecipitationQuality};
 pub use equipment::{
     ArmorSlot, AttachablePose, AttachablePoseBone, CompiledItemAttackCooldown,
-    CompiledItemAttackTiming, CompiledKineticWeaponTiming, DEFAULT_LEATHER_RGB,
+    CompiledItemAttackTiming, CompiledItemFood, CompiledKineticWeaponTiming, DEFAULT_LEATHER_RGB,
     EQUIPMENT_CARRIER_MAGIC, EQUIPMENT_CARRIER_VERSION, EquipmentBinding, EquipmentCategory,
     EquipmentColorMask, EquipmentReference, EquipmentTexture, EquipmentTransform, ItemUseDuration,
     MAX_EQUIPMENT_BINDINGS, MAX_EQUIPMENT_CARRIER_BYTES, MAX_EQUIPMENT_IDENTIFIER_BYTES,
     MAX_EQUIPMENT_PIXEL_BYTES, MAX_EQUIPMENT_TEXTURE_SIDE, MAX_EQUIPMENT_TEXTURES,
     RuntimeEquipmentCatalog, color_mask_texel, encode_equipment_catalog,
     encode_equipment_catalog_full, encode_equipment_catalog_with_attack_timings,
-    encode_equipment_catalog_with_textures,
+    encode_equipment_catalog_with_food, encode_equipment_catalog_with_textures,
 };
 pub use error::AssetError;
 pub use fire::{FIRE_ATTACHMENT_MASK_COUNT, FIRE_SUPPORTED_QUAD_COUNT, FIRE_TEMPLATE_COUNT};
@@ -180,12 +180,13 @@ pub use fire::{fire_attachment_template_offset, fire_template_quad_count};
 pub use fog_layers::resolve_fog_layers;
 pub use fog_transition::FogTransition;
 pub use font::{
-    CompiledFontCatalog, FONT_CARRIER_MAGIC, FONT_CARRIER_SCHEMA, FONT_FALLBACK_ATLAS_SIDE,
-    FONT_RASTER_EM_PIXELS, FONT_STYLE_COVERAGE_GAMMA, FONT_STYLE_SDF, FontCatalogError,
-    FontCatalogIdentity, FontGlyphRequests, FontLineMetrics, FontPixels, FontRendering,
-    FontTexturePage, GlyphMetrics, MAX_FONT_CARRIER_BYTES, MAX_FONT_FALLBACK_PAGES,
-    MAX_FONT_GLYPHS, MAX_FONT_KERNING_PAIRS, MAX_FONT_PAGE_SIDE, MAX_FONT_PAGES,
-    MAX_FONT_PATH_BYTES, MAX_FONT_SOURCE_BYTES, RuntimeFontCatalog, encode_font_catalog,
+    CompiledFontCatalog, FONT_CARRIER_MAGIC, FONT_CARRIER_SCHEMA, FONT_FACE_BUNDLE_MAGIC,
+    FONT_FACE_BUNDLE_SCHEMA, FONT_FALLBACK_ATLAS_SIDE, FONT_RASTER_EM_PIXELS,
+    FONT_STYLE_COVERAGE_GAMMA, FONT_STYLE_SDF, FontCatalogError, FontCatalogIdentity,
+    FontFaceRaster, FontLineMetrics, FontPixels, FontRendering, FontTexturePage, GlyphMetrics,
+    MAX_FONT_CARRIER_BYTES, MAX_FONT_GLYPHS, MAX_FONT_KERNING_PAIRS, MAX_FONT_PAGE_SIDE,
+    MAX_FONT_PAGES, MAX_FONT_PATH_BYTES, MAX_FONT_SOURCE_BYTES, RuntimeFontCatalog,
+    decode_font_face_bundle, encode_font_catalog, encode_font_face_bundle,
 };
 pub use fsb::{DecodedSound, FsbError, MAX_FSB_INPUT_BYTES, MAX_FSB_PCM_BYTES, decode_fsb5};
 pub use glyph_sheet::{CellGlyph, GlyphAtlas, GlyphSheet, SHEET_GRID, SheetGlyph};
@@ -195,9 +196,6 @@ pub use hud::{
     HudCatalogError, HudTexture, HudTextureRole, MAX_HUD_TEXTURE_BYTES, RuntimeHudCatalog,
     encode_hud_catalog,
 };
-pub use hud_extras::{HUD_EXTRA_SIDE, HUD_EXTRAS_MAGIC, HUD_EXTRAS_VERSION, MAX_HUD_EXTRAS_BYTES};
-pub use hud_extras::{HudExtraRole, HudExtras, HudExtrasError};
-pub use hud_extras::{decode_hud_extras, encode_hud_extras};
 pub use icon::{
     BLOCK_ITEM_FACE_SIDE, BLOCK_ITEM_SHEET_GRID, BLOCK_ITEM_SHEET_SIZE, ICON_CARRIER_MAGIC,
     ICON_CARRIER_VERSION, IconBlockModel, IconBlockSheet, IconEntry, IconSprite,
@@ -245,7 +243,8 @@ pub use particle::{
 };
 pub use physics_registry::{
     BlockPhysicsFlags, BlockPhysicsRecord, PhysicsRegistry, SurfaceResponse,
-    physics_registry_header_protocol, read_physics_registry, read_physics_registry_for_protocol,
+    encode_physics_registry, physics_registry_header_protocol, read_physics_registry,
+    read_physics_registry_for_protocol, read_physics_registry_seed_for_protocol,
 };
 pub use pinned_content::{
     active_content_registry_protocol, pinned_block_registry_bytes, pinned_block_sequential_id,
@@ -297,8 +296,3 @@ pub use ui::{
     UiSidecarEntry, UiTexturePlacement, UiTextureUv, encode_ui_catalog,
 };
 pub use vanilla_refs::{MAX_VANILLA_REFS_BYTES, VanillaEntityRefs, VanillaGeometryFile};
-pub use weather_textures::{
-    END_SKY_SIDE, MAX_WEATHER_TEXTURES_BYTES, WEATHER_SHEET_SIDE, WEATHER_TEXTURES_MAGIC,
-    WEATHER_TEXTURES_VERSION, WeatherImage, WeatherTextures, WeatherTexturesError,
-    decode_weather_textures, encode_weather_textures,
-};

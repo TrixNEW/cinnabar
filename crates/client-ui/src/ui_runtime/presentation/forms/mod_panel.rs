@@ -17,6 +17,7 @@ mod surface_tests;
 mod template;
 #[cfg(test)]
 mod tests;
+mod vector;
 mod widgets;
 
 use std::sync::Arc;
@@ -28,7 +29,7 @@ use ui::{
 };
 
 use super::{
-    engine::{EngineInputs, EngineOutput, ScreenArt},
+    engine::{ScreenArt, screen::PaintFrame},
     hud::CachedScreen,
 };
 use crate::ui_runtime::{UiRuntime, forms::EngineFrame};
@@ -54,6 +55,7 @@ pub(super) struct ModPanel {
     pages: usize,
     rows: usize,
     drag: Option<usize>,
+    vector_drag: Option<String>,
     scroll_drag: Option<(String, f64)>,
     view: ViewState,
     data: Arc<DataSource>,
@@ -65,11 +67,12 @@ pub(super) struct ModPanel {
 impl UiPresentationRuntime {
     pub(in super::super) fn invalidate_mod_panel_font(&mut self) {
         self.cancel_mod_hud_editor();
-        if let Some(panel) = &mut self.form_presentation.mod_panel {
+        if let Some(panel) = &mut self.screens.mod_panel {
             panel.cancel_edit();
             panel.screen = CachedScreen::default();
             panel.frame = None;
             panel.drag = None;
+            panel.vector_drag = None;
             panel.scroll_drag = None;
             panel.pointer = None;
         }
@@ -79,11 +82,11 @@ impl UiPresentationRuntime {
     pub fn set_mod_panel(&mut self, panel: Option<&Panel>) -> Result<(), String> {
         let Some(panel) = panel else {
             self.cancel_mod_hud_editor();
-            self.form_presentation.mod_panel = None;
+            self.screens.mod_panel = None;
             return Ok(());
         };
         panel.validate()?;
-        if let Some(current) = self.form_presentation.mod_panel.as_mut() {
+        if let Some(current) = self.screens.mod_panel.as_mut() {
             if current.panel == *panel {
                 return Ok(());
             }
@@ -92,6 +95,7 @@ impl UiPresentationRuntime {
                 current.catalog = None;
                 current.frame = None;
                 current.drag = None;
+                current.vector_drag = None;
                 current.scroll_drag = None;
                 if current.panel.sections != panel.sections
                     || current.panel.controls.len() != panel.controls.len()
@@ -108,7 +112,7 @@ impl UiPresentationRuntime {
             current.panel = panel.clone();
             current.refresh_data();
         } else {
-            self.form_presentation.mod_panel = Some(ModPanel {
+            self.screens.mod_panel = Some(ModPanel {
                 panel: panel.clone(),
                 open: false,
                 catalog: None,
@@ -120,6 +124,7 @@ impl UiPresentationRuntime {
                 pages: 1,
                 rows: 1,
                 drag: None,
+                vector_drag: None,
                 scroll_drag: None,
                 view: ViewState::default(),
                 data: Arc::new(control_data(panel)),
@@ -135,12 +140,13 @@ impl UiPresentationRuntime {
         if !open {
             self.cancel_mod_hud_editor();
         }
-        if let Some(panel) = self.form_presentation.mod_panel.as_mut() {
+        if let Some(panel) = self.screens.mod_panel.as_mut() {
             panel.open = open;
             if !open {
                 panel.cancel_edit();
                 panel.frame = None;
                 panel.drag = None;
+                panel.vector_drag = None;
                 panel.scroll_drag = None;
                 panel.view = ViewState::default();
                 panel.pointer = None;
@@ -149,14 +155,14 @@ impl UiPresentationRuntime {
     }
 
     pub fn mod_panel_open(&self) -> bool {
-        self.form_presentation
+        self.screens
             .mod_panel
             .as_ref()
             .is_some_and(|panel| panel.open)
     }
 
     pub fn mod_panel_toggle_key(&self) -> Option<&str> {
-        self.form_presentation
+        self.screens
             .mod_panel
             .as_ref()
             .map(|panel| panel.panel.toggle_key.as_str())
@@ -170,23 +176,18 @@ impl UiPresentationRuntime {
         held: bool,
     ) -> Vec<Event> {
         let controls = self
-            .form_presentation
+            .screens
             .mod_panel
             .as_ref()
             .map_or(&[][..], |panel| panel.panel.controls.as_slice());
-        if let Some(editor) = self
-            .form_presentation
-            .mod_hud_editor
-            .as_mut()
-            .filter(|e| e.open)
-        {
+        if let Some(editor) = self.screens.mod_hud_editor.as_mut().filter(|e| e.open) {
             let events = editor.pointer(position, pressed, held, controls);
             if editor.close_requested {
                 self.set_mod_panel_open(false);
             }
             return events;
         }
-        self.form_presentation
+        self.screens
             .mod_panel
             .as_mut()
             .map_or_else(Vec::new, |panel| {
@@ -206,15 +207,10 @@ impl UiPresentationRuntime {
             self.append_mod_hud_editor(runtime, nodes, next, metrics, content);
             return;
         }
-        let Some(panel) = self
-            .form_presentation
-            .mod_panel
-            .as_mut()
-            .filter(|panel| panel.open)
-        else {
+        let Some(panel) = self.screens.mod_panel.as_mut().filter(|panel| panel.open) else {
             return;
         };
-        let Some(renderer) = self.form_presentation.engine.as_deref() else {
+        let Some(renderer) = self.engine.as_deref() else {
             panel.open = false;
             return;
         };
@@ -239,6 +235,7 @@ impl UiPresentationRuntime {
             panel.frame = None;
             panel.open = false;
             panel.drag = None;
+            panel.vector_drag = None;
             panel.scroll_drag = None;
             panel.pointer = None;
             return;
@@ -255,6 +252,7 @@ impl UiPresentationRuntime {
             panel.catalog = None;
             panel.frame = None;
             panel.drag = None;
+            panel.vector_drag = None;
             panel.scroll_drag = None;
             panel.pointer = None;
         }
@@ -275,13 +273,14 @@ impl UiPresentationRuntime {
                 }
                 Err(error) => {
                     panel.open = false;
-                    bevy::log::warn!(%error, "personal extension panel rejected");
+                    tracing::warn!(%error, "personal extension panel rejected");
                     return;
                 }
             }
         }
         let data = Arc::clone(&panel.data);
-        let inputs = EngineInputs {
+        let rollback = (nodes.len(), *next);
+        let mut paint_frame = PaintFrame {
             layouts: &mut self.layouts,
             font: &self.font,
             metrics,
@@ -290,19 +289,17 @@ impl UiPresentationRuntime {
             content,
             translate: &|_| None,
             language: runtime.text_generation(),
-        };
-        let rollback = (nodes.len(), *next);
-        let out = EngineOutput {
+            now: 0.0,
             nodes: &mut *nodes,
             next: &mut *next,
-            overlay: &[],
+            renderers: &mut [],
         };
         let art = ScreenArt {
             view: Some(&panel.view),
             ..Default::default()
         };
         let catalog = panel.catalog.as_ref().expect("catalog installed above");
-        match renderer.draw(art, inputs, out, |env, root| {
+        match renderer.draw(art, &mut paint_frame, |env, root| {
             panel.screen.render_shared_with(
                 SCREEN,
                 catalog,
@@ -324,7 +321,7 @@ impl UiPresentationRuntime {
             result => {
                 out_of_render(panel, nodes, next, rollback);
                 if let Err(error) = result {
-                    bevy::log::warn!(%error, "personal extension panel disabled after rendering failure");
+                    tracing::warn!(%error, "personal extension panel disabled after rendering failure");
                 }
             }
         }

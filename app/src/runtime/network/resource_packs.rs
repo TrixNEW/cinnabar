@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bevy::prelude::Resource;
 use resource_pack::{LayeredPackView, PackAdmission};
 
 use super::{
@@ -34,14 +33,14 @@ pub struct PackApplication {
         Option<Arc<client_ui::ui_runtime::item_facts::SessionItemComponents>>,
     pub(crate) glyph_sheets: Option<Arc<SessionGlyphSheets>>,
     pub(crate) entities: Option<Arc<assets::SessionEntityPack>>,
-    pub(super) entity_artwork: Option<Arc<render::ActorArtworkPages>>,
+    pub(super) entity_artwork: Option<Arc<render_model::ActorArtworkPages>>,
     pub(crate) prepared_actor_artwork:
         Option<Arc<client_presentation::prepared_actor_artwork::PreparedActorArtwork>>,
     pub(crate) property_defaults: Vec<(Arc<str>, Vec<client_world::PropertyDefault>)>,
     pub(crate) server_ui: Option<Arc<ServerUiPack>>,
     /// Installed only once the session's Bootstrap is accepted.
     pub(crate) server_sounds: Option<Arc<client_audio::audio::ServerSoundPack>>,
-    pub(crate) aim_assist_textures: [Option<Arc<render::AimAssistTexture>>; 2],
+    pub(crate) aim_assist_textures: [Option<Arc<render_scene::AimAssistTexture>>; 2],
 }
 
 impl Default for PackApplication {
@@ -76,7 +75,7 @@ impl PackApplication {
     }
 
     /// Prepares against the exact base snapshot that this application will publish over.
-    pub(super) fn prepare_actor_artwork(&mut self, base: Option<&render::ActorArtworkPages>) {
+    pub(super) fn prepare_actor_artwork(&mut self, base: Option<&render_model::ActorArtworkPages>) {
         self.prepared_actor_artwork = base.zip(self.entities.as_ref()).map(|(base, pack)| {
             if let Some(previous) = &self.prepared_actor_artwork
                 && previous.pages_for(base, pack).is_some()
@@ -96,7 +95,7 @@ use pack_runtime::required_packs_applied;
 /// The carrier snapshots a join's presentation is prepared over on the session worker.
 #[derive(Clone, Copy, Default)]
 pub(super) struct JoinBases<'a> {
-    pub(super) actor_artwork: Option<&'a render::ActorArtworkPages>,
+    pub(super) actor_artwork: Option<&'a render_model::ActorArtworkPages>,
     pub(super) ui_catalog: Option<&'a Arc<json_ui::Catalog>>,
 }
 
@@ -243,6 +242,7 @@ fn compile_application(
             "server resource pack dropped"
         );
     }
+    let max_layers = overlay_texture_layer_limit();
     let view = LayeredPackView::new(Arc::clone(&stack));
     // Hashing every archive is needed only by the block and entity caches, so only when one of
     // those subscribers compiles; whichever needs it first computes it.
@@ -279,12 +279,14 @@ fn compile_application(
                         view,
                         custom_blocks,
                         hashed_block_ids,
+                        max_layers,
                         || {
                             compile_block_overlay(
                                 view,
                                 custom_blocks,
                                 hashed_block_ids,
                                 BASE_MATERIAL_KEYS.get(),
+                                max_layers,
                             )
                             .map(Arc::new)
                         },
@@ -414,7 +416,7 @@ fn compile_application(
             .or_default()
             .extend(inputs);
     }
-    super::item_diagnostics::session_icons(icon_keys.len(), item_icons.as_deref());
+    client_runtime::item_diagnostics::session_icons(icon_keys.len(), item_icons.as_deref());
     if entities_stopped || cancelled() {
         return None;
     }
@@ -465,6 +467,37 @@ pub(super) fn install_server_ui(
     }
 }
 
+/// The renderer's requested device limit, installed before a session can compile packs.
+static OVERLAY_TEXTURE_LAYER_LIMIT: std::sync::OnceLock<std::sync::OnceLock<u32>> =
+    std::sync::OnceLock::new();
+
+/// Makes direct-connect pack workers wait until startup publishes the actual device limit.
+pub(crate) fn await_overlay_texture_device() {
+    OVERLAY_TEXTURE_LAYER_LIMIT.get_or_init(std::sync::OnceLock::new);
+}
+
+/// Publishes the active device's array limit to pack preparation workers at startup.
+pub(crate) fn initialize_overlay_texture_limit(
+    device: Option<bevy::prelude::Res<bevy::render::renderer::RenderDevice>>,
+) {
+    let limit = device.map_or_else(
+        || wgpu::Limits::default().max_texture_array_layers,
+        |device| device.limits().max_texture_array_layers,
+    );
+    let _ = OVERLAY_TEXTURE_LAYER_LIMIT
+        .get_or_init(std::sync::OnceLock::new)
+        .set(limit);
+}
+
+/// Waits for a requested device; fixtures without renderer setup use conservative limits.
+pub(super) fn overlay_texture_layer_limit() -> u32 {
+    let limit = OVERLAY_TEXTURE_LAYER_LIMIT.get().map_or_else(
+        || wgpu::Limits::default().max_texture_array_layers,
+        |limit| *limit.wait(),
+    );
+    limit.min(assets::MAX_TEXTURE_LAYERS as u32)
+}
+
 /// Texture keys of the vanilla carrier's materials, set once at startup when the sidecar loads.
 static BASE_MATERIAL_KEYS: std::sync::OnceLock<assets::MaterialKeys> = std::sync::OnceLock::new();
 
@@ -480,6 +513,7 @@ struct CachedOverlay {
     dependencies: Option<std::collections::BTreeSet<resource_pack::PackDependency>>,
     stack: StackFingerprint,
     hashed: bool,
+    max_layers: u32,
     blocks: protocol::CustomBlocks,
     overlay: Option<Arc<CompiledBlockOverlay>>,
 }
@@ -494,6 +528,7 @@ fn cached_block_overlay(
     view: &LayeredPackView,
     blocks: &protocol::CustomBlocks,
     hashed: bool,
+    max_layers: u32,
     compile: impl FnOnce() -> Option<Arc<CompiledBlockOverlay>>,
 ) -> Option<Arc<CompiledBlockOverlay>> {
     let mut cache = OVERLAY_CACHE
@@ -501,6 +536,7 @@ fn cached_block_overlay(
         .unwrap_or_else(|poison| poison.into_inner());
     if let Some(cached) = cache.as_ref()
         && cached.hashed == hashed
+        && cached.max_layers == max_layers
         && cached.stack == *fingerprint
         && cached.blocks == *blocks
         && (view.dependencies().is_none() || cached.dependencies.is_some())
@@ -517,6 +553,7 @@ fn cached_block_overlay(
             .map(|dependencies| dependencies.snapshot()),
         stack: fingerprint.clone(),
         hashed,
+        max_layers,
         blocks: blocks.clone(),
         overlay: overlay.clone(),
     });
@@ -603,13 +640,13 @@ impl OverlaidCarrier {
 /// Points the chunk renderer at the session's assets. Every switch takes a
 /// fresh revision so the GPU tables re-upload even if an allocation is reused.
 pub(super) fn install_chunk_textures(
-    textures: &mut render::ChunkTextureAssets,
+    textures: &mut render_scene::ChunkTextureAssets,
     assets: &Arc<assets::RuntimeAssets>,
 ) {
     static REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     if !Arc::ptr_eq(textures.assets(), assets) {
         let revision = REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        *textures = render::ChunkTextureAssets::with_revision(Arc::clone(assets), revision);
+        *textures = render_scene::ChunkTextureAssets::with_revision(Arc::clone(assets), revision);
     }
 }
 
@@ -647,10 +684,6 @@ pub(super) fn install_server_language(
         runtime.set_server_lang(if setup_succeeded { overlay } else { None });
     }
 }
-
-/// Bevy adapter for the generation-bound admitted server stack.
-#[derive(Debug, Default, Resource, bevy::prelude::Deref, bevy::prelude::DerefMut)]
-pub(crate) struct ResourcePackAdmissionState(pack_runtime::ResourcePackAdmissionState);
 
 #[cfg(test)]
 mod tests;

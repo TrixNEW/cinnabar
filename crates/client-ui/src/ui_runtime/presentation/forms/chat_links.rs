@@ -95,6 +95,7 @@ pub(super) fn hits(
     layouts: &mut TextLayoutCache,
     scale: f32,
     origin: [f32; 2],
+    annotations: &[ui::mod_hud::ChatAction],
 ) -> Vec<(String, UiRect, String)> {
     let mut result = Vec::new();
     for node in nodes {
@@ -116,7 +117,19 @@ pub(super) fn hits(
         else {
             continue;
         };
-        let targets = targets(text);
+        let mut targets = targets(text);
+        if let Ok(spans) = ui::parse_bedrock_text(text, ui::UiLimits::MAX_TEXT_BYTES) {
+            let plain = spans.plain_text();
+            for annotation in annotations {
+                for (start, found) in plain.match_indices(&annotation.text) {
+                    targets.push(Target {
+                        chars: plain[..start].chars().count()
+                            ..plain[..start + found.len()].chars().count(),
+                        url: format!("extension-action:{}", annotation.action),
+                    });
+                }
+            }
+        }
         if targets.is_empty() {
             continue;
         }
@@ -255,6 +268,7 @@ mod tests {
             &mut layouts,
             scale,
             [3.0, 7.0],
+            &[],
         );
         assert_eq!(regions.len(), 2);
         assert_eq!(regions[0].0, "https://one.example");
@@ -269,6 +283,7 @@ mod tests {
             &mut layouts,
             scale,
             [0.0; 2],
+            &[],
         );
         assert!(regions.len() > 1);
         assert!(
@@ -309,7 +324,7 @@ mod tests {
     fn link_hits_follow_the_actual_default_and_named_label_paint_origin() {
         use std::sync::Arc;
 
-        use super::super::engine::{EngineInputs, EngineOutput, FormEngine, ScreenArt};
+        use super::super::engine::{FormEngine, ScreenArt, screen::PaintFrame};
         use crate::ui_runtime::presentation::UiPresentationRuntime;
 
         for named in [false, true] {
@@ -328,8 +343,12 @@ mod tests {
                 );
                 let px = metrics.scale.get() * ui::FONT_DESIGN_PIXEL_TEXELS as f32;
                 let mut presentation = UiPresentationRuntime::new(Arc::clone(&font)).unwrap();
-                let engine =
-                    FormEngine::new(crate::test_support::mini_carrier(), Default::default(), 0);
+                let engine = FormEngine::new(
+                    crate::test_support::mini_carrier(),
+                    Default::default(),
+                    0,
+                    super::super::screen_registry::registry(),
+                );
                 let mut node = history_node("https://example.com", 600.0);
                 if let Draw::Text { options, .. } = &mut node.draw {
                     options.font_type = named.then(|| "alternative".into());
@@ -355,7 +374,7 @@ mod tests {
                 engine
                     .draw(
                         ScreenArt::default(),
-                        EngineInputs {
+                        &mut PaintFrame {
                             layouts: &mut presentation.layouts,
                             font: &font,
                             metrics,
@@ -364,11 +383,10 @@ mod tests {
                             content: physical.map(|side| side as f32),
                             translate: &|_| None,
                             language: [0; 3],
-                        },
-                        EngineOutput {
+                            now: 0.0,
                             nodes: &mut painted,
                             next: &mut next,
-                            overlay: &[],
+                            renderers: &mut [],
                         },
                         |_, _| Some(render),
                     )
@@ -407,6 +425,7 @@ mod tests {
                     &mut presentation.layouts,
                     px,
                     [0.0; 2],
+                    &[],
                 );
                 assert_eq!(regions.len(), 1);
                 let bounds = regions[0].1;
@@ -434,6 +453,7 @@ mod tests {
             &mut layouts,
             scale,
             [0.0; 2],
+            &[],
         );
         assert_eq!(original.len(), 1);
         node.clip = json_ui::RectOut {
@@ -450,6 +470,7 @@ mod tests {
             &mut layouts,
             scale,
             [0.0; 2],
+            &[],
         );
         assert_eq!(clipped.len(), 1);
         assert!(clipped[0].1.width() < original[0].1.width());
@@ -465,7 +486,8 @@ mod tests {
                 &font,
                 &mut layouts,
                 scale,
-                [0.0; 2]
+                [0.0; 2],
+                &[]
             )
             .is_empty()
         );
@@ -479,9 +501,36 @@ mod tests {
                 &font,
                 &mut layouts,
                 scale,
-                [0.0; 2]
+                [0.0; 2],
+                &[]
             )
             .is_empty()
         );
+    }
+    #[test]
+    fn extension_annotation_hits_only_the_selected_glyph_span() {
+        let font = super::super::super::tests::fixture_font();
+        let metrics =
+            TextMetrics::for_viewport([800, 600], ui::DpiScale::new(1.0).unwrap(), Some(1));
+        let scale = metrics.scale.get() * ui::FONT_DESIGN_PIXEL_TEXELS as f32;
+        let mut layouts = TextLayoutCache::new(32, 1 << 20);
+        let node = history_node("Alex: meet at 10 64 -20 please", 500.);
+        let actions = [ui::mod_hud::ChatAction {
+            text: "10 64 -20".into(),
+            action: "marker_0".into(),
+        }];
+        let regions = hits(
+            &[node],
+            &ViewState::default(),
+            metrics,
+            &font,
+            &mut layouts,
+            scale,
+            [0.; 2],
+            &actions,
+        );
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].0, "extension-action:marker_0");
+        assert!(regions[0].1.width() < 500. * scale);
     }
 }

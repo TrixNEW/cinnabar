@@ -4,10 +4,15 @@ mod cells;
 pub(super) mod template;
 #[cfg(test)]
 pub(super) mod tests;
+mod world_labels;
 
 use super::{
-    engine::{EngineInputs, EngineOutput, ScreenArt},
+    engine::{
+        ScreenArt,
+        screen::{CustomRenderer, PaintFrame},
+    },
     hud::CachedScreen,
+    item_renderer::ItemRenderer,
 };
 use crate::ui_runtime::UiRuntime;
 use json_ui::{Catalog, Context, DataSource, Scalar, ViewState};
@@ -29,17 +34,50 @@ pub(super) struct ModWidgets {
     icons: Vec<IconRef>,
     resolved: Vec<Option<IconRef>>,
     pub(super) viewport: [f64; 2],
+    projection: Option<[f32; 16]>,
 }
 impl UiPresentationRuntime {
+    /// Native food presentation preferences of the published component.
+    pub fn mod_hunger_overlay(&self) -> Option<&ui::mod_hud::HungerOverlay> {
+        self.screens
+            .mod_widgets
+            .as_ref()?
+            .content
+            .hunger_overlay
+            .as_ref()
+    }
+    /// Reads the validated cosmetic actor style of the currently published component.
+    pub fn mod_actor_style(&self) -> Option<&ui::mod_hud::ActorStyle> {
+        self.screens
+            .mod_widgets
+            .as_ref()?
+            .content
+            .actor_style
+            .as_ref()
+    }
+
     /// Replaces card values while retaining the template when its geometry is unchanged.
     pub fn set_mod_hud(&mut self, content: Option<&Hud>) -> Result<(), String> {
-        let Some(content) = content.filter(|hud| !hud.cards.is_empty() || hud.hide_effect_icons)
-        else {
-            self.form_presentation.mod_widgets = None;
+        if self.mod_chat_actions() != content.map_or(&[][..], |hud| hud.chat_actions.as_slice()) {
+            let chat = &mut self.screens.chat;
+            chat.link_generation = None;
+            chat.link_hits.clear();
+            chat.extension_events.clear();
+        }
+        let Some(content) = content.filter(|hud| {
+            hud.hunger_overlay.is_some()
+                || hud.actor_style.is_some()
+                || !hud.cards.is_empty()
+                || hud.hide_effect_icons
+                || hud.hide_scoreboard
+                || !hud.world_labels.is_empty()
+                || !hud.chat_actions.is_empty()
+        }) else {
+            self.screens.mod_widgets = None;
             return Ok(());
         };
         content.validate()?;
-        if let Some(widgets) = &mut self.form_presentation.mod_widgets {
+        if let Some(widgets) = &mut self.screens.mod_widgets {
             if widgets.content == *content {
                 return Ok(());
             }
@@ -51,7 +89,7 @@ impl UiPresentationRuntime {
             widgets.data = Arc::new(template::data(content, widgets.viewport));
             widgets.resolved.clear();
         } else {
-            self.form_presentation.mod_widgets = Some(ModWidgets {
+            self.screens.mod_widgets = Some(ModWidgets {
                 content: content.clone(),
                 catalog: Arc::new(template::catalog(content)?),
                 screen: CachedScreen::default(),
@@ -59,14 +97,37 @@ impl UiPresentationRuntime {
                 icons: Vec::new(),
                 resolved: Vec::new(),
                 viewport: [0.; 2],
+                projection: None,
             });
         }
         Ok(())
     }
 
+    /// Current literal chat spans, revoked with the owning cosmetic HUD output.
+    pub(super) fn mod_chat_actions(&self) -> &[ui::mod_hud::ChatAction] {
+        self.screens
+            .mod_widgets
+            .as_ref()
+            .map_or(&[], |w| &w.content.chat_actions)
+    }
+
+    /// Supplies the current actual camera projection; absent cameras hide every world anchor.
+    pub fn set_mod_world_projection(&mut self, projection: Option<[f32; 16]>) {
+        if let Some(widgets) = &mut self.screens.mod_widgets {
+            widgets.projection = projection.filter(|m| m.iter().all(|v| v.is_finite()));
+        }
+    }
+    /// A sidebar replacement immediately restores vanilla when revoked.
+    pub(super) fn mod_scoreboard_hidden(&self) -> bool {
+        self.screens
+            .mod_widgets
+            .as_ref()
+            .is_some_and(|w| w.content.hide_scoreboard)
+    }
+
     /// A published replacement may hide ordinary effect icons even with no card rows.
     pub(super) fn mod_effect_icons_hidden(&self) -> bool {
-        self.form_presentation
+        self.screens
             .mod_widgets
             .as_ref()
             .is_some_and(|widgets| widgets.content.hide_effect_icons)
@@ -77,7 +138,7 @@ impl UiPresentationRuntime {
         if let Some(crosshair) = crosshair {
             crosshair.validate()?;
         }
-        self.form_presentation.mod_crosshair = crosshair.cloned();
+        self.screens.mod_crosshair = crosshair.cloned();
         Ok(())
     }
 
@@ -90,13 +151,7 @@ impl UiPresentationRuntime {
         !runtime.ui_focused(player)
             && self.menu_view.is_none()
             && self.loading_stage.is_none()
-            && self
-                .form_presentation
-                .chat
-                .settings
-                .options
-                .value("hide_hud")
-                == 0
+            && self.screens.chat.settings.options.value("hide_hud") == 0
             && !self.mod_panel_open()
     }
 
@@ -109,12 +164,10 @@ impl UiPresentationRuntime {
         metrics: TextMetrics,
         content: [f32; 2],
     ) {
-        if !self.mod_hud_visible(player, runtime)
-            || !self.form_presentation.hud.hud.has_visible_content()
-        {
+        if !self.mod_hud_visible(player, runtime) || !self.screens.hud.hud.has_visible_content() {
             return;
         }
-        let Some(widgets) = &self.form_presentation.mod_widgets else {
+        let Some(widgets) = &self.screens.mod_widgets else {
             return;
         };
         let mut resolved = [None; MAX_HUD_ROWS];
@@ -127,11 +180,7 @@ impl UiPresentationRuntime {
             count += 1;
         }
         let resolved = &resolved[..count];
-        let widgets = self
-            .form_presentation
-            .mod_widgets
-            .as_mut()
-            .expect("checked above");
+        let widgets = self.screens.mod_widgets.as_mut().expect("checked above");
         let px = metrics.scale.get() * FONT_DESIGN_PIXEL_TEXELS as f32;
         let viewport = [f64::from(content[0] / px), f64::from(content[1] / px)];
         if widgets.viewport != viewport {
@@ -156,10 +205,24 @@ impl UiPresentationRuntime {
             widgets.resolved.clear();
             widgets.resolved.extend_from_slice(resolved);
         }
-        let Some(renderer) = self.form_presentation.engine.as_deref() else {
+        if !widgets.content.world_labels.is_empty() {
+            world_labels::data(
+                Arc::make_mut(&mut widgets.data),
+                &widgets.content,
+                viewport,
+                widgets.projection,
+            );
+        }
+        let Some(renderer) = self.engine.as_deref() else {
             return;
         };
-        let inputs = EngineInputs {
+        let rollback = (nodes.len(), *next);
+        let mut items = ItemRenderer {
+            icons: &widgets.icons,
+            id_aux: &[],
+        };
+        let mut renderers: [&mut dyn CustomRenderer; 1] = [&mut items];
+        let mut paint_frame = PaintFrame {
             layouts: &mut self.layouts,
             font: &self.font,
             metrics,
@@ -168,19 +231,13 @@ impl UiPresentationRuntime {
             content,
             translate: &|_| None,
             language: runtime.text_generation(),
-        };
-        let rollback = (nodes.len(), *next);
-        let out = EngineOutput {
+            now: 0.0,
             nodes: &mut *nodes,
             next: &mut *next,
-            overlay: &[],
+            renderers: &mut renderers,
         };
         let px = metrics.scale.get() * FONT_DESIGN_PIXEL_TEXELS as f32;
-        let art = ScreenArt {
-            icons: &widgets.icons,
-            ..Default::default()
-        };
-        let result = renderer.draw(art, inputs, out, |env, root| {
+        let result = renderer.draw(ScreenArt::default(), &mut paint_frame, |env, root| {
             widgets.screen.render_shared_with(
                 "cinnabar_personal_hud.cards",
                 &widgets.catalog,
@@ -194,8 +251,8 @@ impl UiPresentationRuntime {
         if let Err(error) = result {
             nodes.truncate(rollback.0);
             *next = rollback.1;
-            self.form_presentation.mod_widgets = None;
-            bevy::log::warn!(%error, "personal HUD cards disabled after rendering failure");
+            self.screens.mod_widgets = None;
+            tracing::warn!(%error, "personal HUD cards disabled after rendering failure");
         }
     }
 }

@@ -10,7 +10,8 @@ use bevy::{
     time::Real,
     window::{PrimaryWindow, Window},
 };
-use render::{
+use client_shell::ui_resources::{UiPresentationResource, UiRuntimeResource};
+use render_scene::{
     ChunkRenderQueue, ChunkUploadAcknowledgements, VisibilityDiagnostics,
     VisibilityDiagnosticsInput,
 };
@@ -22,10 +23,8 @@ use client_ui::ui_runtime::presentation::{
     LoadingStage, UiPresentationError, UiPresentationRuntime,
 };
 pub mod forms;
-pub mod gui_scale_settings;
 pub mod publish;
 pub(crate) use forms::drive_menu_panorama;
-pub(crate) use gui_scale_settings::apply_gui_scale_setting;
 pub(crate) use publish::{
     observe_mount_jump_input, platform_safe_area_insets, prepare_ui_runtime, publish_ui_runtime,
 };

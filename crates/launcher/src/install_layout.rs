@@ -76,7 +76,7 @@ impl InstallLayout {
                 resource_root: local.clone(),
                 compiled_assets: local.join("assets/compiled"),
                 physics_registry: local
-                    .join("assets")
+                    .join("assets/compiled")
                     .join(assets::carriers::physics_registry_basename()),
                 core_executable: binary_dir.join(core_filename(platform)),
                 user_config_root: config,
@@ -309,6 +309,12 @@ impl InstallLayout {
     #[must_use]
     pub fn local_worlds_dir(&self) -> PathBuf {
         self.user_data_root.join("worlds")
+    }
+
+    /// Downloaded Bedrock Dedicated Server builds, beside the worlds they host.
+    #[must_use]
+    pub fn bds_dir(&self) -> PathBuf {
+        self.user_data_root.join("bds")
     }
 
     #[must_use]
@@ -593,7 +599,11 @@ mod tests {
             );
             assert_eq!(
                 layout.physics_registry.parent().unwrap(),
-                layout.resource_root.join("assets")
+                if layout.is_installed() {
+                    layout.resource_root.join("assets")
+                } else {
+                    layout.compiled_assets.clone()
+                }
             );
         }
     }
@@ -721,7 +731,7 @@ mod tests {
         );
         assert_eq!(
             layout.physics_registry,
-            PathBuf::from("/work/cinnabar/.local/assets")
+            PathBuf::from("/work/cinnabar/.local/assets/compiled")
                 .join(assets::carriers::physics_registry_basename())
         );
         assert_eq!(
